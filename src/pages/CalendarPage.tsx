@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, matchPath, useLocation, useNavigate } from 'react-router-dom'
 import { collection, onSnapshot } from 'firebase/firestore'
 import { auth, db } from '../firebase.ts'
 import EnergyToggle from '../components/EnergyToggle.tsx'
@@ -54,6 +54,7 @@ type CalendarNavState = {
 
 function CalendarPage() {
   const location = useLocation()
+  const isActive = !!matchPath('/calendar', location.pathname)
   const navigate = useNavigate()
   const [meals, setMeals] = useState<MealListItem[]>([])
   const [mealsLoaded, setMealsLoaded] = useState(false)
@@ -186,6 +187,15 @@ function CalendarPage() {
     // the first snapshot (however briefly) means the layout we scroll
     // against is the one that's actually going to stick around.
     if (!mealsLoaded) return
+    // Calendar mounts (and this effect can fire) long before it's ever
+    // visited — every gated page mounts once for the whole session (see
+    // PageRegistry.tsx). `scrollIntoView` is a no-op on an element inside a
+    // `hidden` subtree, so scrolling while inactive would silently do
+    // nothing and then never retry: the guard below would already treat
+    // this `location.state` as "applied" by the time the user actually
+    // navigates here. Waiting for `isActive` means the first real scroll
+    // attempt happens once there's actually something to scroll.
+    if (!isActive) return
     if (location.state === lastAppliedNavState.current) return
     const isFirstRun = lastAppliedNavState.current === NAV_STATE_UNSET
     lastAppliedNavState.current = location.state
@@ -236,7 +246,7 @@ function CalendarPage() {
       // already covers "take me to today" on demand.
       scrollToDay(todayStr, 'instant')
     }
-  }, [mealsLoaded, location.state, location.pathname, navigate, todayStr])
+  }, [mealsLoaded, isActive, location.state, location.pathname, navigate, todayStr])
 
   function openRecipeEditModal(
     e: React.MouseEvent,

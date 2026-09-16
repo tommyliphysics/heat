@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
 import AccountMenu from './AccountMenu.tsx'
 import BackButton from './BackButton.tsx'
-import BrandMark from './BrandMark.tsx'
 import DoseAlertBanners from './DoseAlertBanners.tsx'
 import ForwardButton from './ForwardButton.tsx'
 import Icon from './Icon.tsx'
@@ -26,8 +25,7 @@ function AppNav({ children }: AppNavProps) {
       <div className="app-shell-body">
         <nav className="app-sidebar" aria-label="Main navigation">
           <NavLink to="/dashboard" className="app-sidebar-brand">
-            <BrandMark size={18} />
-            Heat
+            <img src="/logo.png" alt="Heat" className="app-sidebar-logo" />
           </NavLink>
 
           {NAV_LINKS.map((link) => (

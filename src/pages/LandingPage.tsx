@@ -1,5 +1,4 @@
 import { Link } from 'react-router-dom'
-import BrandMark from '../components/BrandMark.tsx'
 import PageLayout from '../components/PageLayout.tsx'
 import './pages.css'
 
@@ -8,8 +7,7 @@ function LandingPage() {
     <PageLayout
       header={
         <h1 className="landing-brand">
-          <BrandMark size={30} />
-          Heat
+          <img src="/logo.png" alt="Heat" className="landing-logo" />
         </h1>
       }
     >
