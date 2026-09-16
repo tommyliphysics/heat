@@ -3,7 +3,10 @@ import { Link, useNavigate } from 'react-router-dom'
 import { signInWithEmailAndPassword } from 'firebase/auth'
 import { auth } from '../firebase.ts'
 import GoogleButton from '../components/GoogleButton.tsx'
+import PageLayout from '../components/PageLayout.tsx'
 import { signInWithGoogle } from '../lib/googleSignIn.ts'
+import { takePendingPath } from '../lib/pendingPath.ts'
+import { ensureDefaultSettings } from '../lib/settings.ts'
 import './pages.css'
 
 function LoginPage() {
@@ -19,7 +22,7 @@ function LoginPage() {
     setSaving(true)
     try {
       await signInWithEmailAndPassword(auth, email, password)
-      navigate('/dashboard')
+      navigate(takePendingPath())
     } catch {
       setError('Incorrect email or password. Please try again.')
     } finally {
@@ -31,16 +34,26 @@ function LoginPage() {
     setError('')
     const success = await signInWithGoogle()
     if (success) {
-      navigate('/dashboard')
+      // Covers a first-time Google sign-in landing here rather than on
+      // Create Account — no-ops for a returning user (see ensureDefaultSettings).
+      if (auth.currentUser) {
+        ensureDefaultSettings(auth.currentUser.uid).catch(() => {})
+      }
+      navigate(takePendingPath())
     } else {
       setError('Google sign-in failed. Please try again.')
     }
   }
 
   return (
-    <section className="page page-center">
-      <h1>Log In</h1>
-
+    <PageLayout
+      header={<h1>Log In</h1>}
+      footer={
+        <Link to="/" className="back-link">
+          &larr; Back
+        </Link>
+      }
+    >
       <GoogleButton label="Continue with Google" onClick={handleGoogleSignIn} />
 
       <div className="divider">or</div>
@@ -72,10 +85,7 @@ function LoginPage() {
           {saving ? 'Logging in...' : 'Log In'}
         </button>
       </form>
-      <Link to="/" className="back-link">
-        &larr; Back
-      </Link>
-    </section>
+    </PageLayout>
   )
 }
 

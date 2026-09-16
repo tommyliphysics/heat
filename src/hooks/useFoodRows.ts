@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { collection, onSnapshot } from 'firebase/firestore'
 import { auth, db } from '../firebase.ts'
 import type { FoodRow } from '../lib/foodRow.ts'
+import type { LeftoverChoice } from '../lib/leftovers.ts'
 import type { FoodDocument, QuantityUnit, RecipeDocument } from '../types/food.ts'
 
 export type FoodListItem = FoodDocument & { id: string }
@@ -120,6 +121,9 @@ export function useFoodRows(initialRows: FoodRow[] = []) {
               recipeSnapshot: recipe,
               amount: recipe ? '1' : row.amount,
               unit: recipe ? 'serving' : row.unit,
+              // A different recipe means a different leftover ledger (and
+              // possibly a different serving count) — start fresh.
+              leftoverChoice: undefined,
             }
           : row,
       ),
@@ -128,7 +132,29 @@ export function useFoodRows(initialRows: FoodRow[] = []) {
 
   function updateRowAmount(id: string, amount: string) {
     setRows((current) =>
-      current.map((row) => (row.id === id ? { ...row, amount } : row)),
+      current.map((row) =>
+        row.id === id
+          ? // Changing a recipe row's serving count invalidates any
+            // meal-only ingredient override locked in at the old count, and
+            // any leftover-tracking choice (whether it's enough to draw from
+            // leftovers, or whether there's a surplus to reserve, both
+            // depend on the count) — drop both so they're re-decided fresh.
+            {
+              ...row,
+              amount,
+              customFoods: row.recipeId ? null : row.customFoods,
+              leftoverChoice: row.recipeId ? undefined : row.leftoverChoice,
+            }
+          : row,
+      ),
+    )
+  }
+
+  function updateRowLeftoverChoice(id: string, choice: LeftoverChoice) {
+    setRows((current) =>
+      current.map((row) =>
+        row.id === id ? { ...row, leftoverChoice: choice } : row,
+      ),
     )
   }
 
@@ -154,6 +180,7 @@ export function useFoodRows(initialRows: FoodRow[] = []) {
     updateRowRecipe,
     updateRowAmount,
     updateRowUnit,
+    updateRowLeftoverChoice,
     removeRow,
   }
 }

@@ -1,3 +1,16 @@
+import type { DateFormat } from '../types/settings.ts'
+import type { MealTime } from '../types/food.ts'
+
+/** Ordering for meals sharing a date — breakfast before lunch before dinner, etc. */
+export const MEAL_TIME_ORDER: Record<MealTime, number> = {
+  breakfast: 0,
+  lunch: 1,
+  dinner: 2,
+  snack: 3,
+  drink: 4,
+  '': 5,
+}
+
 export function toDateStr(date: Date): string {
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')
@@ -52,9 +65,54 @@ export function formatDayHeading(dateStr: string): string {
   })
 }
 
-export function formatDayMonth(dateStr: string): string {
+/**
+ * Guesses a sensible default `DateFormat` from the browser's own locale —
+ * checked once at signup (see `ensureDefaultSettings`), then overridable in
+ * Settings from then on. Works by asking the locale how it orders a
+ * day/month/year date and reading which field comes first.
+ */
+export function detectDateFormat(): DateFormat {
+  const parts = new Intl.DateTimeFormat().formatToParts(new Date(2000, 0, 2))
+  const order = parts
+    .map((part) => part.type)
+    .filter((type): type is 'year' | 'month' | 'day' =>
+      type === 'year' || type === 'month' || type === 'day',
+    )
+
+  if (order[0] === 'year') return 'YMD'
+  if (order[0] === 'day') return 'DMY'
+  return 'MDY'
+}
+
+/**
+ * A fully numeric date in the given `DateFormat`'s digit order — the one
+ * date rendering in the app that's genuinely ambiguous without a stated
+ * order (unlike the spelled-out-month headings above), so it's the one
+ * driven by the user's `dateFormat` setting rather than the browser locale.
+ * `includeYear: false` drops the year, e.g. for a week-range label.
+ */
+export function formatShortDate(
+  dateStr: string,
+  format: DateFormat,
+  { includeYear = true }: { includeYear?: boolean } = {},
+): string {
   const date = parseDateStr(dateStr)
-  return `${date.getDate()}/${date.getMonth() + 1}`
+  const d = String(date.getDate()).padStart(2, '0')
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const y = date.getFullYear()
+
+  if (format === 'YMD') return includeYear ? `${y}-${m}-${d}` : `${m}-${d}`
+  const [first, second] = format === 'MDY' ? [m, d] : [d, m]
+  return includeYear ? `${first}/${second}/${y}` : `${first}/${second}`
+}
+
+/** `formatShortDate` for a raw `Date.now()`-style timestamp (e.g. `FoodDocument.createdAt`) instead of a 'YYYY-MM-DD' string. */
+export function formatShortDateFromTimestamp(
+  timestamp: number,
+  format: DateFormat,
+): string {
+  const iso = new Date(timestamp).toISOString().slice(0, 10)
+  return formatShortDate(iso, format)
 }
 
 export function formatMonthYear(dateStr: string): string {

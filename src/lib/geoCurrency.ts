@@ -27,3 +27,31 @@ export async function currencyFromIP(): Promise<string | null> {
     return null
   }
 }
+
+/**
+ * Looks up the visitor's IANA time zone from their IP via the same
+ * geolocation API `currencyFromIP` uses (it returns both in one response,
+ * but a fresh request keeps the two lookups independent/reusable). Falls
+ * back to the browser's own `Intl` timezone — instant and exact, no network
+ * involved — on any failure, so this never blocks signup on a flaky request.
+ */
+export async function timezoneFromIP(): Promise<string> {
+  const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 4000)
+
+    const response = await fetch('https://ipapi.co/json/', {
+      signal: controller.signal,
+    })
+    clearTimeout(timeout)
+    if (!response.ok) return browserTimezone
+
+    const data = await response.json()
+    const timezone = typeof data.timezone === 'string' ? data.timezone : null
+    return timezone || browserTimezone
+  } catch {
+    return browserTimezone
+  }
+}

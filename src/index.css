@@ -26,6 +26,9 @@
   --warn-bg: var(--paprika-tint);
   --warn-border: var(--paprika-border);
   --error: #c0392b;
+  --info: #3866c2;
+  --info-bg: rgba(56, 102, 194, 0.12);
+  --info-border: rgba(56, 102, 194, 0.45);
 
   --shadow:
     0 14px 28px -10px rgba(33, 29, 22, 0.16), 0 3px 8px -3px rgba(33, 29, 22, 0.1);
@@ -35,6 +38,12 @@
   --radius: 12px;
   --radius-lg: 20px;
   --ease: cubic-bezier(0.22, 0.75, 0.32, 1);
+
+  /* Page content's reading-width cap — widened in browser mode (see the
+     min-width: 768px query below) once the sidebar nav is showing, so
+     content actually uses the extra room instead of floating narrow in a
+     wide window. */
+  --content-width: 480px;
 
   --sans: 'Karla', system-ui, 'Segoe UI', sans-serif;
   --heading: 'Bricolage Grotesque', system-ui, sans-serif;
@@ -70,6 +79,9 @@
     --sand: #33362d;
     --code-bg: #23261f;
     --error: #e5726a;
+    --info: #7aa2f0;
+    --info-bg: rgba(122, 162, 240, 0.16);
+    --info-border: rgba(122, 162, 240, 0.42);
     --shadow:
       0 14px 28px -10px rgba(0, 0, 0, 0.45), 0 3px 8px -3px rgba(0, 0, 0, 0.3);
     --shadow-sm: 0 2px 10px -4px rgba(0, 0, 0, 0.35);
@@ -108,6 +120,23 @@ body {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+}
+
+/* Matches AppNav's sidebar breakpoint (pages.css) — once the persistent
+   nav takes over from the mobile bottom bar, drop the narrow-card cap so
+   the sidebar + page content actually use the browser window instead of
+   floating in a fixed-width column with empty space on either side. */
+@media (min-width: 768px) {
+  #root {
+    width: 100%;
+  }
+
+  :root {
+    /* Scales with the window instead of a fixed cap, so content keeps
+       comfortably over half the browser width even on a wide monitor,
+       rather than flatlining at one narrow size. */
+    --content-width: clamp(640px, 65vw, 1400px);
+  }
 }
 
 h1,

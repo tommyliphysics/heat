@@ -1,8 +1,16 @@
-import { quantityRatio } from './units.ts'
+import {
+  computeLeftoverLedger,
+  inferLeftoverChoice,
+  resolveLeftoverEntry,
+  type LeftoverChoice,
+} from './leftovers.ts'
+import { foodPriceRatio, foodQuantityRatio } from './units.ts'
 import type {
   FoodDocument,
   MealDocument,
   MealEntry,
+  MealListItem,
+  MealTime,
   QuantityUnit,
   RecipeDocument,
 } from '../types/food.ts'
@@ -15,6 +23,10 @@ export type FoodRow = {
   recipeSnapshot: RecipeDocument | null
   amount: string
   unit: QuantityUnit
+  /** Set only on a reconstructed recipe row whose ingredients were locally edited for this meal — see `MealEntry`'s `customFoods`. Takes priority over `recipeSnapshot` in `buildFoodsMap`/`buildMealEntries`. */
+  customFoods?: Record<string, FoodDocument> | null
+  /** Recipe row only — this entry's leftover-tracking choices (see `lib/leftovers.ts`). Undefined until the leftover UI has resolved a value for this row; `buildMealEntries` then treats it as "cook fresh, don't track" (full hands-on time, no ledger contribution). */
+  leftoverChoice?: LeftoverChoice
 }
 
 function sumAmount(a: string, b: string): string {
@@ -48,6 +60,7 @@ function mergeFoodDocuments(a: FoodDocument, b: FoodDocument): FoodDocument {
 
   return {
     name: a.name,
+    ...(a.brand ? { brand: a.brand } : {}),
     quantity: {
       amount: sumAmount(a.quantity.amount, b.quantity.amount),
       unit: a.quantity.unit,
@@ -83,16 +96,26 @@ function mergeFoodDocuments(a: FoodDocument, b: FoodDocument): FoodDocument {
     price: {
       amount: sumAmount(a.price.amount, b.price.amount),
       currency: a.price.currency,
-      brand: a.price.brand,
       retailer: a.price.retailer,
     },
   }
 }
 
-/** Scales every amount on a food snapshot by `ratio` (e.g. servings eaten / recipe servings). */
-export function scaleFoodDocument(food: FoodDocument, ratio: number): FoodDocument {
+/**
+ * Scales every amount on a food snapshot by `ratio` (e.g. servings eaten /
+ * recipe servings). `priceRatio` scales the price separately — it can
+ * differ from `ratio` since the price may be quoted for a different
+ * quantity than nutrition is recorded per (see `foodPriceRatio`) — and
+ * defaults to `ratio` when the caller has no reason to distinguish them.
+ */
+export function scaleFoodDocument(
+  food: FoodDocument,
+  ratio: number,
+  priceRatio: number = ratio,
+): FoodDocument {
   return {
     name: food.name,
+    ...(food.brand ? { brand: food.brand } : {}),
     quantity: {
       amount: scaleAmount(food.quantity.amount, ratio),
       unit: food.quantity.unit,
@@ -121,7 +144,10 @@ export function scaleFoodDocument(food: FoodDocument, ratio: number): FoodDocume
         { amount: scaleAmount(m.amount, ratio), unit: m.unit },
       ]),
     ),
-    price: { ...food.price, amount: scaleAmount(food.price.amount, ratio) },
+    price: {
+      ...food.price,
+      amount: scaleAmount(food.price.amount, priceRatio),
+    },
   }
 }
 
@@ -147,6 +173,13 @@ export function buildFoodsMap(
   }
 
   for (const row of rows) {
+    if (row.customFoods) {
+      for (const [foodId, food] of Object.entries(row.customFoods)) {
+        addEntry(foodId, food)
+      }
+      continue
+    }
+
     if (row.recipeSnapshot) {
       const servings = Number(row.amount) || 0
       const recipeServings = Number(row.recipeSnapshot.servings) || 0
@@ -157,15 +190,23 @@ export function buildFoodsMap(
       )) {
         const currentFood = currentFoods[foodId]
         if (currentFood) {
-          const fullRecipeRatio = quantityRatio(
-            currentFood.quantity.amount,
-            currentFood.quantity.unit,
+          const fullRecipeRatio = foodQuantityRatio(
+            currentFood,
+            listedFood.quantity.amount,
+            listedFood.quantity.unit,
+          )
+          const fullRecipePriceRatio = foodPriceRatio(
+            currentFood,
             listedFood.quantity.amount,
             listedFood.quantity.unit,
           )
           addEntry(
             foodId,
-            scaleFoodDocument(currentFood, fullRecipeRatio * recipeRatio),
+            scaleFoodDocument(
+              currentFood,
+              fullRecipeRatio * recipeRatio,
+              fullRecipePriceRatio * recipeRatio,
+            ),
           )
         } else {
           addEntry(foodId, scaleFoodDocument(listedFood, recipeRatio))
@@ -175,14 +216,10 @@ export function buildFoodsMap(
     }
 
     if (row.foodId && row.foodSnapshot) {
-      const ratio = quantityRatio(
-        row.foodSnapshot.quantity.amount,
-        row.foodSnapshot.quantity.unit,
-        row.amount,
-        row.unit,
-      )
+      const ratio = foodQuantityRatio(row.foodSnapshot, row.amount, row.unit)
+      const priceRatio = foodPriceRatio(row.foodSnapshot, row.amount, row.unit)
       addEntry(row.foodId, {
-        ...scaleFoodDocument(row.foodSnapshot, ratio),
+        ...scaleFoodDocument(row.foodSnapshot, ratio, priceRatio),
         quantity: { amount: row.amount, unit: row.unit },
       })
     }
@@ -233,6 +270,8 @@ export function mealToRows(meal: MealDocument): FoodRow[] {
         recipeSnapshot: null,
         amount: entry.servings,
         unit: 'serving',
+        customFoods: entry.customFoods ?? null,
+        leftoverChoice: inferLeftoverChoice(entry.batchServings, entry.handsOnTime),
       }
     }
 
@@ -255,8 +294,21 @@ export function mealToRows(meal: MealDocument): FoodRow[] {
  * than the flattened food totals `buildFoodsMap` produces. Used only for
  * display (e.g. the calendar's expandable ingredient list); nutrition/report
  * calculations should keep using `buildFoodsMap`'s flattened output.
+ *
+ * `allMeals`/`mealDate`/`mealTime`/`excludeMealId` locate this meal's
+ * position in each recipe row's leftover-tracking ledger (see
+ * `lib/leftovers.ts`) so `batchServings`/`handsOnTime` resolve correctly
+ * from the row's `leftoverChoice`. Callers that don't care about that
+ * resolution (e.g. a live ingredient-list preview) can omit them — every
+ * row then resolves as a fresh, untracked cook.
  */
-export function buildMealEntries(rows: FoodRow[]): MealEntry[] {
+export function buildMealEntries(
+  rows: FoodRow[],
+  allMeals: MealListItem[] = [],
+  mealDate: string = '',
+  mealTime: MealTime = '',
+  excludeMealId: string | null = null,
+): MealEntry[] {
   const entries: MealEntry[] = []
 
   for (const row of rows) {
@@ -264,6 +316,40 @@ export function buildMealEntries(rows: FoodRow[]): MealEntry[] {
       const servingsEntered = Number(row.amount) || 0
       const recipeServings = Number(row.recipeSnapshot.servings) || 0
       const ratio = recipeServings ? servingsEntered / recipeServings : 0
+
+      const ledger = computeLeftoverLedger(
+        row.recipeId,
+        recipeServings,
+        allMeals,
+        excludeMealId,
+        mealDate,
+        mealTime,
+      )
+      const { batchServings, handsOnTime } = resolveLeftoverEntry(
+        ledger,
+        servingsEntered,
+        row.recipeSnapshot.handsOnTime ?? '',
+        row.leftoverChoice ?? { usesLeftovers: false, reserveSurplus: false },
+      )
+
+      if (row.customFoods) {
+        entries.push({
+          kind: 'recipe',
+          recipeId: row.recipeId,
+          name: row.recipeSnapshot.name,
+          servings: row.amount,
+          foods: Object.entries(row.customFoods).map(([foodId, food]) => ({
+            foodId,
+            name: food.name,
+            amount: food.quantity.amount,
+            unit: food.quantity.unit,
+          })),
+          handsOnTime,
+          batchServings,
+          customFoods: row.customFoods,
+        })
+        continue
+      }
 
       entries.push({
         kind: 'recipe',
@@ -281,6 +367,8 @@ export function buildMealEntries(rows: FoodRow[]): MealEntry[] {
             }
           },
         ),
+        handsOnTime,
+        batchServings,
       })
       continue
     }

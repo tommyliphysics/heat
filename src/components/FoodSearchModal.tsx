@@ -2,6 +2,8 @@ import { useState } from 'react'
 import Modal from './Modal.tsx'
 import Icon from './Icon.tsx'
 import type { FoodListItem } from '../hooks/useFoodRows.ts'
+import { foodDisplayName } from '../lib/food.ts'
+import { matchesQuery } from '../lib/search.ts'
 
 type FoodSearchModalProps = {
   open: boolean
@@ -36,9 +38,9 @@ function FoodSearchModal({
     setQuery('')
   }
 
-  const trimmed = query.trim().toLowerCase()
+  const trimmed = query.trim()
   const results = trimmed
-    ? foods.filter((food) => food.name.toLowerCase().includes(trimmed))
+    ? foods.filter((food) => matchesQuery(food.name, trimmed))
     : []
 
   return (
@@ -65,7 +67,7 @@ function FoodSearchModal({
             {results.map((food) => (
               <li key={food.id}>
                 <button type="button" onClick={() => handleSelect(food)}>
-                  {food.name}
+                  {foodDisplayName(food)}
                 </button>
               </li>
             ))}

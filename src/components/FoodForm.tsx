@@ -1,20 +1,37 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { Link } from 'react-router-dom'
-import BackButton from './BackButton.tsx'
 import ConfirmDeleteModal from './ConfirmDeleteModal.tsx'
 import Icon from './Icon.tsx'
 import NutritionModal from './NutritionModal.tsx'
+import NutritionScanButton from './NutritionScanButton.tsx'
+import PageLayout from './PageLayout.tsx'
 import PurchaseModal from './PurchaseModal.tsx'
 import StatButton from './StatButton.tsx'
 import { getCurrencySymbol } from '../data/currencies.ts'
-import type { PublicFoodListItem } from '../hooks/usePublicFoods.ts'
-import { EMPTY_FOOD_FORM_VALUES, type FoodFormValues } from '../lib/food.ts'
-import { CAL_PER_UNIT, quantityConversionFactor } from '../lib/units.ts'
+import type { FoodNameEntry } from '../hooks/useFoodNameIndex.ts'
+import {
+  EMPTY_FOOD_FORM_VALUES,
+  findDuplicateFood,
+  upsertPriceRecord,
+  type FoodFormValues,
+} from '../lib/food.ts'
+import {
+  nutritionScanToFormPatch,
+  type ScannedNutritionDetail,
+} from '../lib/nutritionScan.ts'
+import { fetchPublicFoodByName, publicFoodToFormValues } from '../lib/publicFoodLookup.ts'
+import { matchesQuery } from '../lib/search.ts'
+import {
+  CAL_PER_UNIT,
+  formatQuantityLabel,
+  quantityConversionFactor,
+} from '../lib/units.ts'
 import type {
   EnergyUnit,
+  FoodDocument,
   Micronutrient,
   MicronutrientUnit,
-  PublicFoodDocument,
+  PriceRecord,
   QuantityUnit,
 } from '../types/food.ts'
 import '../pages/pages.css'
@@ -30,12 +47,30 @@ type FoodFormProps = {
   submitLabel: string
   savingLabel: string
   initialValues?: FoodFormValues
-  onSubmit: (values: FoodFormValues) => Promise<void>
+  /** `duplicateId` is set when the typed name+brand match another saved food (see `existingFoods`) — the caller should save into that food's document instead of this form's own target. */
+  onSubmit: (values: FoodFormValues, duplicateId: string | null) => Promise<void>
   onDelete?: () => Promise<void>
   resetOnSuccess?: boolean
-  publicFoods?: PublicFoodListItem[]
+  foodNameIndex?: FoodNameEntry[]
   /** Resolved in the background (e.g. dominant/IP-geolocated currency); applied only if the user hasn't already changed the currency away from its initial value. */
   defaultCurrency?: string
+  /** The user's own saved foods, for the "no two foods share a name and brand" check. */
+  existingFoods?: (FoodDocument & { id: string })[]
+  /** Excludes this food's own id from the duplicate check when editing — otherwise a food editing itself without changing name/brand would flag itself. Omit when adding a brand-new food. */
+  currentFoodId?: string
+  /**
+   * Set when this food backs an established shared item (see
+   * `types/groups.ts`'s `SharedItemDocument`) — the name of the group it's
+   * shared with, purely for display. Name/brand become read-only (renaming
+   * a shared item would need migrating the group's own records, out of
+   * scope — see that type's doc comment) and a hint explains that
+   * nutrition/price changes need group approval. The actual propose-vs-save
+   * branching happens in the caller's `onSubmit`, which already has this
+   * same gating info in scope.
+   */
+  gatingGroupName?: string | null
+  /** "Food added {date}[, from {source}]" (see `lib/food.ts`'s `describeAddedFrom`) — null when there's nothing to show (a food saved before `createdAt` existed, or this is the Add Food form with nothing saved yet). */
+  addedFromHint?: string | null
 }
 
 function FoodForm({
@@ -46,9 +81,19 @@ function FoodForm({
   onSubmit,
   onDelete,
   resetOnSuccess = true,
-  publicFoods = [],
+  foodNameIndex = [],
   defaultCurrency,
+  existingFoods = [],
+  currentFoodId,
+  gatingGroupName = null,
+  addedFromHint = null,
 }: FoodFormProps) {
+  // Every gated page (Add Food and Edit Food both use this component) is
+  // permanently mounted at once (see PageRegistry.tsx), so a plain static
+  // id like "food-name" would collide between this form's own two
+  // simultaneously-mounted instances — useId() gives each instance a
+  // unique prefix instead.
+  const formId = useId()
   const start = initialValues ?? EMPTY_FOOD_FORM_VALUES
   const [deleteOpen, setDeleteOpen] = useState(false)
 
@@ -58,6 +103,7 @@ function FoodForm({
   const [quantityUnit, setQuantityUnit] = useState<QuantityUnit>(
     start.quantityUnit,
   )
+  const [servingSize, setServingSize] = useState(start.servingSize)
 
   const [nutritionOpen, setNutritionOpen] = useState(false)
   const [energy, setEnergy] = useState(start.energy)
@@ -73,7 +119,19 @@ function FoodForm({
   const [brand, setBrand] = useState(start.brand)
   const [retailer, setRetailer] = useState(start.retailer)
   const [price, setPrice] = useState(start.price)
+  // Defaults to the nutrition quantity (below) until the user picks a
+  // different quantity for this price, or selects a saved price record that
+  // has its own — null means "still following the nutrition quantity".
+  const [priceQuantityOverride, setPriceQuantityOverride] = useState<{
+    amount: string
+    unit: QuantityUnit
+  } | null>(() =>
+    start.priceQuantity
+      ? { amount: start.priceQuantity, unit: start.priceQuantityUnit }
+      : null,
+  )
   const [currency, setCurrency] = useState(start.currency)
+  const [prices, setPrices] = useState<PriceRecord[]>(start.prices)
 
   useEffect(() => {
     if (defaultCurrency && currency === start.currency) {
@@ -84,6 +142,9 @@ function FoodForm({
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [loadingPublicFoodName, setLoadingPublicFoodName] = useState<
+    string | null
+  >(null)
 
   function addMicronutrient() {
     setMicronutrients((rows) => [
@@ -112,35 +173,97 @@ function FoodForm({
     setMicronutrients((rows) => rows.filter((row) => row.id !== id))
   }
 
-  const trimmedName = name.trim().toLowerCase()
+  const duplicateFood = findDuplicateFood(existingFoods, name, brand, currentFoodId)
+
+  const trimmedName = name.trim()
   const publicFoodResults = trimmedName
-    ? publicFoods.filter((food) => food.name.toLowerCase().includes(trimmedName))
+    ? foodNameIndex.filter((entry) => matchesQuery(entry.name, trimmedName))
     : []
 
-  function handleLoadPublicFood(food: PublicFoodDocument) {
-    setName(food.name)
-    setQuantity('100')
-    setQuantityUnit('g')
-    setEnergy(food.energy.amount)
-    setEnergyUnit(food.energy.unit)
-    setCarbohydrates(food.macronutrients.carbs.amount)
-    setFat(food.macronutrients.fat.amount)
-    setProtein(food.macronutrients.protein.amount)
-    setMicronutrients(
-      Object.entries(food.micronutrients ?? {}).map(([mName, m]) => ({
-        id: crypto.randomUUID(),
-        name: mName,
-        amount: m.amount,
-        unit: m.unit,
-      })),
+  async function handleLoadPublicFood(entry: FoodNameEntry) {
+    setError('')
+    setLoadingPublicFoodName(entry.name)
+    try {
+      const food = await fetchPublicFoodByName(entry.name)
+      if (!food) {
+        setError(`Could not find nutrition data for "${entry.name}".`)
+        return
+      }
+      const values = publicFoodToFormValues(food)
+      setName(values.name)
+      setQuantity(values.quantity)
+      setQuantityUnit(values.quantityUnit)
+      setEnergy(values.energy)
+      setEnergyUnit(values.energyUnit)
+      setCarbohydrates(values.carbohydrates)
+      setFat(values.fat)
+      setProtein(values.protein)
+      setMicronutrients(values.micronutrients)
+    } catch {
+      setError('Could not load nutrition data. Please try again.')
+    } finally {
+      setLoadingPublicFoodName(null)
+      setNameSearchOpen(false)
+    }
+  }
+
+  function handleNutritionScan(details: ScannedNutritionDetail[]) {
+    const patch = nutritionScanToFormPatch(details, {
+      quantity,
+      quantityUnit,
+      servingSize,
+      energy,
+      energyUnit,
+      carbohydrates,
+      fat,
+      protein,
+      micronutrients,
+    })
+    setQuantity(patch.quantity)
+    setQuantityUnit(patch.quantityUnit)
+    setServingSize(patch.servingSize)
+    setEnergy(patch.energy)
+    setEnergyUnit(patch.energyUnit)
+    setCarbohydrates(patch.carbohydrates)
+    setFat(patch.fat)
+    setProtein(patch.protein)
+    setMicronutrients(patch.micronutrients)
+  }
+
+  // The effective price quantity: whatever the user (or a selected price
+  // record) explicitly set, or the nutrition quantity by default.
+  const priceQuantity = priceQuantityOverride?.amount ?? quantity
+  const priceQuantityUnit = priceQuantityOverride?.unit ?? quantityUnit
+
+  function handleSelectPriceRecord(record: PriceRecord) {
+    // Brand is now a food-wide attribute, not per-retailer — switching
+    // which saved price record is active leaves it untouched.
+    setRetailer(record.retailer)
+    setPrice(record.amount)
+    setCurrency(record.currency)
+    setPriceQuantityOverride(
+      record.quantity
+        ? { amount: record.quantity.amount, unit: record.quantity.unit }
+        : null,
     )
-    setNameSearchOpen(false)
   }
 
   function handleQuantityUnitChange(newUnit: QuantityUnit) {
     const factor = quantityConversionFactor(quantityUnit, newUnit)
     setQuantity((v) => scaleValue(v, factor))
     setQuantityUnit(newUnit)
+  }
+
+  function handlePriceQuantityChange(value: string) {
+    setPriceQuantityOverride({ amount: value, unit: priceQuantityUnit })
+  }
+
+  function handlePriceQuantityUnitChange(newUnit: QuantityUnit) {
+    const factor = quantityConversionFactor(priceQuantityUnit, newUnit)
+    setPriceQuantityOverride({
+      amount: scaleValue(priceQuantity, factor),
+      unit: newUnit,
+    })
   }
 
   function handleEnergyUnitChange(newUnit: EnergyUnit) {
@@ -154,26 +277,34 @@ function FoodForm({
     setError('')
     setSaving(true)
     try {
-      await onSubmit({
-        name,
-        quantity,
-        quantityUnit,
-        energy,
-        energyUnit,
-        carbohydrates,
-        fat,
-        protein,
-        micronutrients,
-        brand,
-        retailer,
-        price,
-        currency,
-      })
+      await onSubmit(
+        {
+          name,
+          quantity,
+          quantityUnit,
+          servingSize,
+          energy,
+          energyUnit,
+          carbohydrates,
+          fat,
+          protein,
+          micronutrients,
+          brand,
+          retailer,
+          price,
+          priceQuantity,
+          priceQuantityUnit,
+          currency,
+          prices,
+        },
+        duplicateFood?.id ?? null,
+      )
 
       if (resetOnSuccess) {
         setName('')
         setQuantity('')
         setQuantityUnit('g')
+        setServingSize('')
         setEnergy('')
         setEnergyUnit('cal')
         setCarbohydrates('')
@@ -183,7 +314,19 @@ function FoodForm({
         setBrand('')
         setRetailer('')
         setPrice('')
+        setPriceQuantityOverride(null)
         setCurrency(defaultCurrency ?? start.currency)
+        setPrices([])
+      } else if (retailer.trim()) {
+        setPrices((current) =>
+          upsertPriceRecord(current, {
+            retailer: retailer.trim(),
+            amount: price,
+            currency,
+            latest: true,
+            quantity: { amount: priceQuantity, unit: priceQuantityUnit },
+          }),
+        )
       }
     } catch {
       setError('Could not save this food. Please try again.')
@@ -193,119 +336,141 @@ function FoodForm({
   }
 
   return (
-    <section className="page page-center">
-      <Link to="/foods" className="top-link">
-        <Icon name="leaf" size={13} />
-        My Foods
-      </Link>
-      <div className="title-row">
-        <h1>{title}</h1>
-        {onDelete && (
-          <button
-            type="button"
-            className="icon-btn icon-btn-danger"
-            onClick={() => setDeleteOpen(true)}
-            aria-label="Delete food"
-          >
-            <Icon name="trash" size={16} />
-          </button>
-        )}
-      </div>
-      <form className="auth-form" onSubmit={handleSubmit}>
-        <label htmlFor="name">Name</label>
-        <div className="food-autocomplete">
-          <input
-            id="name"
-            type="text"
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value)
-              setNameSearchOpen(true)
-            }}
-            onFocus={() => setNameSearchOpen(true)}
-            onBlur={() => setNameSearchOpen(false)}
-            autoComplete="off"
-            required
-          />
-
-          {nameSearchOpen && publicFoodResults.length > 0 && (
-            <div className="food-autocomplete-menu">
-              <ul className="food-search-results">
-                {publicFoodResults.map((food) => (
-                  <li key={food.id}>
-                    <button
-                      type="button"
-                      className="food-search-result-public"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => handleLoadPublicFood(food)}
-                    >
-                      <span>{food.name}</span>
-                      <span className="food-search-result-source">
-                        Load data from {food.source}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+    <>
+      <PageLayout
+        header={
+          <>
+            <Link to="/foods" className="top-link">
+              <Icon name="leaf" size={13} />
+              Foods
+            </Link>
+            <div className="title-row">
+              <h1>{title}</h1>
+              {onDelete && (
+                <button
+                  type="button"
+                  className="icon-btn icon-btn-danger"
+                  onClick={() => setDeleteOpen(true)}
+                  aria-label="Delete food"
+                >
+                  <Icon name="trash" size={16} />
+                </button>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        }
+      >
+        <form className="auth-form" onSubmit={handleSubmit}>
+          <label htmlFor={`${formId}-food-name`}>Name</label>
+          <div className="food-autocomplete">
+            <input
+              id={`${formId}-food-name`}
+              type="text"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value)
+                setNameSearchOpen(true)
+              }}
+              onFocus={() => setNameSearchOpen(true)}
+              onBlur={() => setNameSearchOpen(false)}
+              autoComplete="off"
+              required
+              disabled={!!gatingGroupName}
+            />
 
-        <label htmlFor="quantity">Quantity</label>
-        <div className="unit-row">
+            {nameSearchOpen && publicFoodResults.length > 0 && (
+              <div className="food-autocomplete-menu">
+                <ul className="food-search-results">
+                  {publicFoodResults.map((food) => (
+                    <li key={`${food.name}-${food.source}`}>
+                      <button
+                        type="button"
+                        className="food-search-result-public"
+                        disabled={loadingPublicFoodName === food.name}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => handleLoadPublicFood(food)}
+                      >
+                        <span>{food.name}</span>
+                        <span className="food-search-result-source">
+                          {loadingPublicFoodName === food.name
+                            ? 'Loading...'
+                            : `Load data from ${food.source}`}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          <label htmlFor={`${formId}-food-brand`}>Brand</label>
           <input
-            id="quantity"
-            type="number"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            required
+            id={`${formId}-food-brand`}
+            type="text"
+            value={brand}
+            onChange={(e) => setBrand(e.target.value)}
+            disabled={!!gatingGroupName}
           />
-          <select
-            aria-label="Quantity unit"
-            value={quantityUnit}
-            onChange={(e) =>
-              handleQuantityUnitChange(e.target.value as QuantityUnit)
+          {duplicateFood && (
+            <p className="form-hint">
+              Food already found — changes will update the existing entry.
+            </p>
+          )}
+          {gatingGroupName && (
+            <p className="form-hint">
+              This food is part of {gatingGroupName}'s shared inventory —
+              name and brand can't be changed while it's shared this way.
+              Changes to nutrition or price need approval from every other
+              member before they take effect.
+            </p>
+          )}
+          {addedFromHint && <p className="form-hint">{addedFromHint}</p>}
+
+          <NutritionScanButton onScanned={handleNutritionScan} />
+
+          <label htmlFor={`${formId}-serving-size`}>Serving Size</label>
+          <input
+            id={`${formId}-serving-size`}
+            type="text"
+            placeholder="e.g. 140g (1 fruit)"
+            value={servingSize}
+            onChange={(e) => setServingSize(e.target.value)}
+          />
+
+          <StatButton
+            label="Nutrition"
+            icon="leaf"
+            value={energy.trim() ? `${energy} ${energyUnit}` : undefined}
+            onClick={() => setNutritionOpen(true)}
+          />
+
+          <StatButton
+            label="Price"
+            icon="tag"
+            value={
+              price.trim()
+                ? `${getCurrencySymbol(currency)}${Number(price).toFixed(2)}/${formatQuantityLabel(priceQuantity, priceQuantityUnit, servingSize)}`
+                : undefined
             }
-          >
-            <option value="g">g</option>
-            <option value="kg">kg</option>
-            <option value="lb">lb</option>
-            <option value="oz">oz</option>
-            <option value="mL">mL</option>
-            <option value="qt">qt</option>
-            <option value="fl oz">fl oz</option>
-            <option value="">ea</option>
-          </select>
-        </div>
+            onClick={() => setPurchaseOpen(true)}
+          />
 
-        <StatButton
-          label="Nutrition"
-          icon="leaf"
-          value={energy.trim() ? `${energy} ${energyUnit}` : undefined}
-          onClick={() => setNutritionOpen(true)}
-        />
+          {error && <p className="form-error">{error}</p>}
 
-        <StatButton
-          label="Price"
-          icon="tag"
-          value={
-            price.trim()
-              ? `${getCurrencySymbol(currency)}${Number(price).toFixed(2)}`
-              : undefined
-          }
-          onClick={() => setPurchaseOpen(true)}
-        />
-
-        {error && <p className="form-error">{error}</p>}
-
-        <button type="submit" className="btn btn-primary" disabled={saving}>
-          {saving ? savingLabel : submitLabel}
-        </button>
-      </form>
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? savingLabel : submitLabel}
+          </button>
+        </form>
+      </PageLayout>
 
       <NutritionModal
         open={nutritionOpen}
         onClose={() => setNutritionOpen(false)}
+        quantity={quantity}
+        onQuantityChange={setQuantity}
+        quantityUnit={quantityUnit}
+        onQuantityUnitChange={handleQuantityUnitChange}
         energy={energy}
         onEnergyChange={setEnergy}
         energyUnit={energyUnit}
@@ -326,17 +491,22 @@ function FoodForm({
       <PurchaseModal
         open={purchaseOpen}
         onClose={() => setPurchaseOpen(false)}
-        brand={brand}
-        onBrandChange={setBrand}
         retailer={retailer}
         onRetailerChange={setRetailer}
         price={price}
         onPriceChange={setPrice}
+        quantity={priceQuantity}
+        onQuantityChange={handlePriceQuantityChange}
+        quantityUnit={priceQuantityUnit}
+        onQuantityUnitChange={handlePriceQuantityUnitChange}
+        nutritionQuantity={quantity}
+        nutritionQuantityUnit={quantityUnit}
+        servingSize={servingSize}
         currency={currency}
         onCurrencyChange={setCurrency}
+        prices={prices}
+        onSelectPriceRecord={handleSelectPriceRecord}
       />
-
-      <BackButton />
 
       {onDelete && (
         <ConfirmDeleteModal
@@ -347,7 +517,7 @@ function FoodForm({
           message={`This will permanently delete "${name || 'this food'}". This can't be undone.`}
         />
       )}
-    </section>
+    </>
   )
 }
 

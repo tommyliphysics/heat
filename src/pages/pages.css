@@ -4,18 +4,257 @@
   align-items: center;
 }
 
-.page-center {
-  flex-grow: 1;
-  justify-content: center;
-  padding: 32px 20px;
+.landing-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.page-calendar {
-  flex-grow: 1;
-  height: 100dvh;
+/*
+ * Every page uses this fixed-header / scrollable-middle / fixed-footer
+ * shape (see PageLayout.tsx) so a page's own content stays reachable
+ * without having to scroll past however much content a page happens to
+ * have. Fills whatever height its container gives it — the full viewport
+ * for an unauthenticated page sitting directly in #root, or the space
+ * `.app-shell-main` has left after the persistent nav (see AppNav) for an
+ * authenticated one.
+ */
+.page-scroll {
+  flex: 1;
+  min-height: 0;
   padding: 32px 20px;
   box-sizing: border-box;
   overflow: hidden;
+}
+
+/*
+ * The persistent app-wide nav (see AppNav.tsx) — a left sidebar on wide
+ * viewports, a bottom tab bar on narrow ones. Both are always in the DOM;
+ * only one is ever visible, switched by the media query at the bottom.
+ */
+.app-shell {
+  width: 100%;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-shell-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+}
+
+.app-sidebar {
+  display: none;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 220px;
+  padding: 28px 14px;
+  box-sizing: border-box;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+
+  .account-menu-wrap {
+    width: 100%;
+  }
+}
+
+.app-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 10px 20px;
+  font-family: var(--heading);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-h);
+  text-decoration: none;
+}
+
+.app-sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background 0.15s var(--ease),
+    color 0.15s var(--ease);
+
+  &:hover {
+    background: var(--accent-bg);
+    color: var(--accent-ink);
+  }
+}
+
+.app-sidebar-link-active {
+  background: var(--accent-bg);
+  color: var(--accent-ink);
+}
+
+.app-sidebar-spacer {
+  flex: 1;
+}
+
+.app-shell-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * Wraps every gated page's slot (see below) — sized the same way
+ * `.app-shell-main` gave PageRegistry's output directly before this wrapper
+ * existed (`flex: 1; min-height: 0`), so it's layout-neutral outside of a
+ * transition. `position: relative` + `overflow: hidden` only start doing
+ * anything once a slide transition positions two slots absolutely inside it
+ * (see `.page-registry-slot--sliding` below) — otherwise dormant.
+ */
+.page-registry-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/*
+ * Every gated page is permanently mounted (see PageRegistry.tsx) as a
+ * sibling here, wrapped in one of these slots — only the one matching the
+ * current route is shown. `display: contents` on the visible slot means it
+ * generates no box of its own, so the page's own root element (e.g.
+ * PageLayout's `.page.page-scroll`) becomes a direct flex item of
+ * `.page-registry-viewport` exactly as if this wrapper didn't exist;
+ * `[hidden]` (higher specificity, so it wins over the bare class above)
+ * removes a hidden slot from layout entirely, same as `display: none`
+ * always has.
+ */
+.page-registry-slot {
+  display: contents;
+}
+
+.page-registry-slot[hidden] {
+  display: none;
+}
+
+/*
+ * The two slots involved in a back/forward slide transition (see
+ * PageRegistry.tsx) — both stay unhidden and stack absolutely inside
+ * `.page-registry-viewport` for the transition's duration, sliding past
+ * each other via `transform`, then the outgoing one reverts to the normal
+ * `[hidden]` slot above once it's over. Overrides `display: contents` with
+ * `flex` (not `block`) since the page's own root (PageLayout's
+ * `.page.page-scroll`) expects a flex container with `flex-direction:
+ * column` to stretch into, matching how `.page-registry-viewport` treats it
+ * the rest of the time.
+ */
+.page-registry-slot--sliding {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+
+  @media (prefers-reduced-motion: no-preference) {
+    transition: transform 320ms var(--ease);
+  }
+}
+
+.app-bottom-nav {
+  flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+
+  .account-menu-wrap {
+    flex: 1;
+    display: flex;
+  }
+}
+
+.app-bottom-nav-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 4px 10px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.15s var(--ease);
+
+  &:hover,
+  &[aria-expanded='true'],
+  &.active {
+    color: var(--accent-ink);
+  }
+}
+
+@media (min-width: 768px) {
+  .app-sidebar {
+    display: flex;
+  }
+
+  .app-bottom-nav {
+    display: none;
+  }
+}
+
+.page-scroll-header,
+.page-scroll-footer {
+  flex-shrink: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.page-scroll-content {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: var(--content-width);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/*
+ * Auto top/bottom margins center this box vertically when it's shorter
+ * than the scroll area (matching the old centered-page look), and shrink
+ * to 0 — rather than clipping, the way `justify-content: center` would —
+ * once it's taller, so scrolling reaches every line from the very top.
+ */
+.page-scroll-content-inner {
+  width: 100%;
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .actions {
@@ -26,7 +265,114 @@
   margin-top: 8px;
 }
 
+.dashboard-section {
+  width: 100%;
+  max-width: var(--content-width);
+  margin-top: 8px;
+  margin-bottom: 28px;
+  text-align: left;
+}
+
+.dashboard-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-family: var(--heading);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-h);
+
+  a:not(.icon-btn),
+  & > span {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: inherit;
+    text-decoration: none;
+    transition: color 0.18s var(--ease);
+  }
+
+  a:not(.icon-btn):hover {
+    color: var(--accent-ink);
+  }
+}
+
+.dashboard-section-summary {
+  margin: -4px 0 12px;
+  color: var(--text);
+  font-size: 13.5px;
+}
+
+.dashboard-section > p {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.dashboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.dashboard-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    border-color 0.18s var(--ease),
+    background 0.18s var(--ease);
+
+  &:hover {
+    border-color: var(--accent-border);
+    background: var(--accent-bg);
+  }
+}
+
+.dashboard-row-static {
+  cursor: default;
+
+  &:hover {
+    border-color: var(--border);
+    background: var(--bg);
+  }
+}
+
+.dashboard-row-meta {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+}
+
 .page-add-btn {
+  margin: 8px 0 24px;
+}
+
+.inventory-add-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
   margin: 8px 0 24px;
 }
 
@@ -141,7 +487,7 @@
   align-items: center;
   gap: 12px;
   width: 100%;
-  max-width: 480px;
+  max-width: var(--content-width);
   margin: 22px 0;
   color: var(--text);
   font-size: 13px;
@@ -167,7 +513,7 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 480px;
+  max-width: var(--content-width);
   margin-top: 24px;
   text-align: left;
 }
@@ -207,6 +553,39 @@
   min-height: 100px;
 }
 
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  max-width: var(--content-width);
+  border-bottom: 1.5px solid var(--border);
+  margin: 0 0 20px;
+}
+
+.tab-bar-btn {
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1.5px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    color 0.15s var(--ease),
+    border-color 0.15s var(--ease);
+
+  &:hover {
+    color: var(--text-h);
+  }
+}
+
+.tab-bar-btn-active {
+  color: var(--accent-ink);
+  border-bottom-color: var(--accent);
+}
+
 .form-section-heading {
   font-family: var(--heading);
   font-size: 13px;
@@ -217,6 +596,24 @@
   margin: 6px 0 16px;
   padding-top: 18px;
   border-top: 2px dashed var(--border);
+}
+
+.form-hint {
+  margin: -10px 0 16px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.account-current-value {
+  font-family: var(--mono);
+  color: var(--text-h);
+  margin: -8px 0 16px;
+}
+
+.account-hint {
+  color: var(--text);
+  font-size: 13px;
+  margin: -4px 0 16px;
 }
 
 .auth-form .btn {
@@ -252,9 +649,173 @@
   }
 }
 
+.camera-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  @media (prefers-reduced-motion: no-preference) {
+    animation: overlay-in 0.2s var(--ease) both;
+  }
+}
+
+.camera-modal {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  overflow: hidden;
+}
+
+.camera-video {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  object-fit: cover;
+  background: #000;
+}
+
+.camera-error {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: #fff;
+}
+
+.camera-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 20px 28px calc(20px + env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.camera-controls-spacer {
+  width: 44px;
+  height: 44px;
+}
+
+.camera-thumbnails {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 12px 16px;
+  list-style: none;
+  overflow-x: auto;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.camera-thumbnail {
+  position: relative;
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+}
+
+.camera-thumbnail-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.camera-capture-btn {
+  width: 68px;
+  height: 68px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 4px solid #fff;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    transform 0.15s var(--ease),
+    background 0.15s var(--ease);
+
+  &:active {
+    transform: scale(0.92);
+    background: rgba(255, 255, 255, 0.25);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+.camera-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s var(--ease);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+}
+
+.camera-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
 .modal {
   width: 100%;
-  max-width: 480px;
+  max-width: var(--content-width);
   max-height: 85vh;
   overflow-y: auto;
   overflow-x: hidden;
@@ -282,8 +843,30 @@
   }
 }
 
-.modal h2 {
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 18px;
+}
+
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.modal h2 {
+  margin-bottom: 0;
+}
+
+.modal-close-btn {
+  width: 32px;
+  height: 32px;
+  margin-top: -4px;
+  margin-right: -4px;
 }
 
 .modal label {
@@ -366,6 +949,104 @@
   }
 }
 
+.field-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+
+  > div {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Inputs otherwise keep the browser's default intrinsic width (~20
+     characters), which overflows a narrow flex column once there are three
+     fields sharing the row instead of two. */
+  input {
+    width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+.dose-times-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 20px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+}
+
+.dose-time-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  label {
+    margin: 0;
+  }
+
+  input {
+    margin: 0;
+    width: auto;
+  }
+}
+
+.custom-schedule-fields {
+  margin: 4px 0 20px;
+}
+
+.custom-schedule-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  margin-bottom: 10px;
+}
+
+.custom-schedule-entry-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  label {
+    margin: 0;
+    flex-shrink: 0;
+  }
+
+  input {
+    margin: 0;
+    min-width: 0;
+    flex: 1;
+  }
+}
+
+.custom-schedule-repeat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+
+  input {
+    width: 60px;
+    margin: 0;
+  }
+
+  select {
+    width: auto;
+    font: inherit;
+    padding: 8px 6px;
+    border-radius: var(--radius-sm);
+    border: 1.5px solid var(--border);
+    background: var(--bg);
+    color: var(--text-h);
+  }
+}
+
 .micronutrient-row {
   display: flex;
   gap: 8px;
@@ -397,6 +1078,7 @@
 }
 
 .icon-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -437,6 +1119,143 @@
   margin: 4px 0 20px;
 }
 
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.missed-doses-table {
+  margin-bottom: 24px;
+}
+
+/* Extra specificity (two classes, not one) to beat `.foods-table td`'s
+   own color rule further down this file. */
+.missed-doses-table .missed-dose-row td {
+  color: var(--error);
+}
+
+.missed-dose-row:hover {
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+}
+
+.missed-dose-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.meal-prep-timeline {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.meal-prep-timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-h);
+  font-size: 13.5px;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.meal-prep-timeline-time {
+  flex-shrink: 0;
+  width: 5.5em;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.meal-prep-timeline-empty {
+  color: var(--text);
+  font-size: 13.5px;
+}
+
+.receipt-review-retailer {
+  margin: 0 0 12px;
+  color: var(--text);
+  font-size: 13.5px;
+}
+
+.receipt-review-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.receipt-review-row {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.receipt-review-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.receipt-review-match-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-ink);
+  background: var(--accent-bg);
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.dose-alert-banners {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.dose-alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #fff;
+  text-decoration: none;
+  transition: opacity 0.15s var(--ease);
+
+  &:hover {
+    opacity: 0.9;
+  }
+}
+
+.dose-alert-banner--missed {
+  background: var(--error);
+}
+
+.dose-alert-banner--countdown {
+  background: var(--info);
+}
+
+.dose-alert-banner--low-stock {
+  background: var(--warn);
+}
+
 .icon-collapsed {
   transform: rotate(-90deg);
 }
@@ -451,6 +1270,34 @@
 
 .recipe-row-ingredient {
   margin-bottom: 2px;
+}
+
+.leftover-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: -6px 0 12px 10px;
+  padding-left: 14px;
+  border-left: 1.5px dashed var(--border);
+}
+
+.leftover-checkbox,
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+
+  input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
 }
 
 .meal-food-row {
@@ -487,6 +1334,14 @@
   select:last-of-type {
     flex-shrink: 0;
     width: auto;
+    /* Without a cap, a closed <select> sizes to its widest <option> — a
+       food with a long "serving" label (e.g. "140g (1 fruit)") blows the
+       box out way past its short selected value, and inconsistently so
+       from row to row depending on each food's own unit options. */
+    max-width: 92px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     box-sizing: border-box;
     padding-left: 6px;
     padding-right: 6px;
@@ -614,15 +1469,234 @@
   color: var(--accent-ink);
 }
 
+.food-search-results button.retailer-search-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.retailer-search-result-price {
+  font-size: 12px;
+  color: var(--accent-ink);
+  white-space: nowrap;
+}
+
 .food-search-empty {
   color: var(--text);
   font-size: 14px;
   margin: 0 0 16px;
 }
 
+.equipment-field {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  margin-bottom: 20px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+  cursor: text;
+
+  &:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-bg);
+  }
+}
+
+.equipment-chip {
+  display: flex;
+  align-items: stretch;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  overflow: hidden;
+}
+
+.equipment-chip-label,
+.equipment-chip-remove {
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--accent-ink);
+  cursor: pointer;
+}
+
+.equipment-chip-label {
+  padding: 4px 4px 4px 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.equipment-chip-remove {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px 4px 4px;
+
+  &:hover {
+    color: var(--text-h);
+  }
+}
+
+/* Specificity note: `.auth-form input` (pages.css above) already sets
+   padding/margin/border/focus-visible on every input in this form,
+   including this one — these rules need to out-specify it, not just
+   out-order it, so they're qualified with the parent class rather than
+   just `.equipment-field-input` on its own. */
+.equipment-field .equipment-field-input {
+  flex: 1;
+  min-width: 140px;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--text-h);
+  padding: 4px 2px;
+  margin: 0;
+
+  &:focus-visible {
+    outline: none;
+    border-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.loading-text {
+  color: var(--text);
+  font-size: 14px;
+  text-align: center;
+
+  @media (prefers-reduced-motion: no-preference) {
+    animation: pulse-fade 1.4s var(--ease) infinite;
+  }
+}
+
+@keyframes pulse-fade {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.filter-panel-anchor {
+  width: 100%;
+}
+
+.list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: var(--content-width);
+}
+
+.search-bar {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-bar input {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 11px 14px 11px 40px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  transition:
+    border-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
+
+  &:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-bg);
+  }
+}
+
+.search-bar-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text);
+  pointer-events: none;
+}
+
+.icon-btn-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1.5px solid var(--bg);
+}
+
+.icon-btn-dot-danger {
+  background: var(--error);
+}
+
+.filter-row {
+  margin-bottom: 16px;
+}
+
+.filter-range {
+  display: flex;
+  gap: 8px;
+
+  input {
+    flex: 1;
+    min-width: 0;
+    margin-bottom: 0;
+  }
+}
+
+.filter-unit-toggle {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 8px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.filter-unit-option {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &.active {
+    background: var(--accent-bg);
+    color: var(--accent-ink);
+    border-color: var(--accent-border);
+  }
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+
+  .btn {
+    flex: 1;
+  }
+}
+
 .foods-table-wrap {
   width: 100%;
-  max-width: 480px;
+  max-width: var(--content-width);
   margin-top: 24px;
   overflow-x: auto;
   border: 1px solid var(--border);
@@ -681,6 +1755,249 @@
   }
 }
 
+.shopping-list-range {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text);
+  text-align: center;
+}
+
+.shopping-list-total {
+  width: 100%;
+  max-width: var(--content-width);
+  margin-top: 10px;
+}
+
+.shopping-list-table tbody tr {
+  cursor: pointer;
+  user-select: none;
+}
+
+.shopping-row-bought td {
+  color: var(--accent-ink);
+}
+
+.shopping-row-bought {
+  background: var(--accent-bg);
+}
+
+.foods-table td.shopping-row-delete {
+  width: 1%;
+  padding-left: 4px;
+  white-space: nowrap;
+  text-align: right;
+
+  .icon-btn {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+.inventory-remaining-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inventory-remaining-pie {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--accent-ink) var(--pct, 0%),
+    var(--border) 0
+  );
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.inventory-remaining-value {
+  min-width: 6ch;
+  padding: 6px 6px;
+  font-family: var(--mono);
+  color: var(--text-h);
+}
+
+.inventory-remaining-input {
+  width: 6ch;
+  box-sizing: border-box;
+  margin-bottom: 0;
+  padding: 6px 6px;
+  font: inherit;
+  font-family: var(--mono);
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  transition: border-color 0.18s var(--ease);
+
+  &:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-bg);
+  }
+}
+
+.inventory-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.inventory-history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--border);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.inventory-history-date {
+  color: var(--text);
+  font-size: 13.5px;
+}
+
+.inventory-remaining-unit-value {
+  padding: 6px 6px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.inventory-remaining-unit-select {
+  box-sizing: border-box;
+  margin-bottom: 0;
+  padding: 6px 6px;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  transition: border-color 0.18s var(--ease);
+
+  &:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-bg);
+  }
+}
+
+.foods-table .shopping-row-check {
+  width: 1%;
+  padding-left: 4px;
+  padding-right: 16px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.shopping-check-icon {
+  color: var(--accent-ink);
+}
+
+.shopping-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--info);
+}
+
+.dose-status-upcoming {
+  color: var(--info);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dose-status-missed {
+  color: var(--error);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dose-check-amount {
+  margin: -8px 0 12px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.custom-dose-occurrence-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+
+  .checkbox-row {
+    margin: 0;
+  }
+}
+
+.shopping-filter-both {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent-ink);
+}
+
+.shopping-row-empty {
+  text-align: center;
+  color: var(--text);
+  font-size: 13.5px;
+  cursor: default;
+}
+
+.icon-btn-sm {
+  width: 28px;
+  height: 28px;
+}
+
+.icon-btn-active {
+  color: var(--accent-ink);
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+}
+
+.icon-btn-info {
+  color: var(--info);
+  background: var(--info-bg);
+  border-color: var(--info-border);
+}
+
+.th-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+
+.th-sort-btn svg {
+  flex-shrink: 0;
+  transition: transform 0.15s var(--ease);
+}
+
+.th-sort-btn .sort-asc {
+  transform: rotate(180deg);
+}
+
 .title-row {
   display: flex;
   align-items: center;
@@ -690,26 +2007,14 @@
 
 .calendar-header-row {
   display: flex;
-  flex-shrink: 0;
   align-items: center;
   justify-content: center;
   gap: 12px;
 }
 
-.calendar-scroll {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  max-width: 480px;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-.calendar-footer {
-  flex-shrink: 0;
-}
-
-.calendar-footer .back-row {
+/* A footer pinned below scrollable content (see PageLayout.tsx) gets a
+   separator instead of the plain top margin a flowing back-row uses. */
+.page-scroll-footer .back-row {
   margin-top: 0;
   padding-top: 14px;
   border-top: 1px solid var(--border);
@@ -717,7 +2022,7 @@
 
 .timeline {
   width: 100%;
-  max-width: 480px;
+  max-width: var(--content-width);
   margin-top: 8px;
   text-align: left;
 }
@@ -799,6 +2104,15 @@
   }
 }
 
+.nutrition-caption {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text);
+}
+
 .link-danger {
   display: flex;
   align-items: center;
@@ -864,6 +2178,14 @@
   color: var(--accent-ink);
 }
 
+.day-has-meals-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
 .report-stats {
   display: flex;
   flex-direction: column;
@@ -907,6 +2229,34 @@
 .report-stat-label {
   font-size: 13px;
   color: var(--text);
+}
+
+/*
+ * Declared before .report-stat-value/.recipe-nutrition-summary so its
+ * `font: inherit` loses the cascade to their explicit font rules when
+ * combined with one of those classes, but still supplies sane defaults
+ * (inheriting the surrounding text's font) when used on its own, e.g.
+ * inline inside a plain paragraph.
+ */
+.energy-toggle {
+  display: inline;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: color 0.15s var(--ease);
+
+  &:hover {
+    color: var(--accent-ink);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    color: var(--accent-ink);
+  }
 }
 
 .report-stat-value {
@@ -978,6 +2328,49 @@
   border-radius: 999px;
 }
 
+.meal-prepared-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+/* `justify-content: space-between` on the header only spaces multiple
+   children apart — with just this button (a time-less meal), `margin-left:
+   auto` is what actually pushes it to the right instead of the left. */
+.meal-card-header .icon-btn {
+  margin-left: auto;
+}
+
+.meal-hands-on-time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: -4px 0 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.hands-on-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.meal-nutrition-summary {
+  max-width: 100%;
+  margin: -4px 0 8px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
 .meal-card ul {
   margin: 0;
   padding-left: 20px;
@@ -986,6 +2379,12 @@
 
 .meal-card li {
   margin-bottom: 2px;
+}
+
+.meal-entry-recipe-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .meal-entry-recipe {
@@ -1000,15 +2399,31 @@
   color: var(--accent-ink);
   cursor: pointer;
 
-  svg:first-child {
+  svg {
     color: var(--accent);
   }
 
-  svg:last-child {
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.meal-entry-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 2px;
+  margin: 0;
+  color: var(--text);
+  cursor: pointer;
+
+  svg {
     transition: transform 0.18s var(--ease);
   }
 
-  &[aria-expanded='true'] svg:last-child {
+  &[aria-expanded='true'] svg {
     transform: rotate(180deg);
   }
 }
@@ -1017,6 +2432,21 @@
   margin: 2px 0 4px 10px;
   padding-left: 14px;
   border-left: 1.5px dashed var(--border);
+}
+
+.meal-entry-ingredient-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--accent-ink);
+    text-decoration: underline;
+  }
 }
 
 .toggle-group {
@@ -1098,14 +2528,19 @@
   align-items: center;
   gap: 6px;
   width: 100%;
-  max-width: 480px;
+  max-width: var(--content-width);
   margin: 0 0 16px;
+  padding: 0;
+  border: none;
+  background: none;
   color: var(--accent-ink);
   text-decoration: none;
+  font-family: inherit;
   font-size: 13.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  cursor: pointer;
   transition: color 0.18s var(--ease);
 
   &:hover {
@@ -1151,6 +2586,24 @@
   }
 }
 
+.equipment-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0;
+}
+
+.equipment-list li {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .recipe-text {
   white-space: pre-wrap;
   color: var(--text-h);
@@ -1162,6 +2615,20 @@
   align-items: center;
   gap: 18px;
   margin-top: 28px;
+}
+
+/*
+ * Sits above every authenticated page's own content (see AppNav.tsx) —
+ * holds BackButton (always shown) and ForwardButton (only once there's
+ * somewhere forward to go, see NavHistoryContext) at opposite ends. Needs
+ * its own inset/spacing instead of `.back-row`'s in-flow margin.
+ */
+.app-shell-nav-row {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px 0;
 }
 
 .back-link {
@@ -1184,13 +2651,58 @@
   }
 }
 
+.account-menu-wrap {
+  position: relative;
+}
+
+.account-menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 170px;
+  padding: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+
+.account-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-h);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s var(--ease);
+
+  &:hover {
+    background: var(--accent-bg);
+    color: var(--accent-ink);
+  }
+}
+
+.account-menu-item-button {
+  width: 100%;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
 /* -- mobile -- */
 @media (max-width: 640px) {
-  .page-center {
-    padding: 22px 16px;
-  }
-
-  .page-calendar {
+  .page-scroll {
     padding: 22px 16px;
   }
 
@@ -1277,4 +2789,41 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.connect-code-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 20px;
+
+  img {
+    align-self: center;
+    border-radius: var(--radius-sm);
+    border: 1.5px solid var(--border);
+  }
+
+  .unit-row {
+    width: 100%;
+  }
+}
+
+.group-member-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.inventory-target-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
 }

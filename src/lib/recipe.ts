@@ -4,7 +4,12 @@ import {
   scaleFoodDocument,
   type FoodRow,
 } from './foodRow.ts'
-import { fromCalories, quantityRatio, toCalories } from './units.ts'
+import {
+  foodPriceRatio,
+  foodQuantityRatio,
+  fromCalories,
+  toCalories,
+} from './units.ts'
 import type { EnergyUnit, FoodDocument, RecipeDocument } from '../types/food.ts'
 
 export type RecipeFormValues = {
@@ -12,6 +17,10 @@ export type RecipeFormValues = {
   servings: string
   rows: FoodRow[]
   recipeText: string
+  equipment: string[]
+  handsOnTime: string
+  prepTime: string
+  cookTime: string
 }
 
 export const EMPTY_RECIPE_FORM_VALUES: RecipeFormValues = {
@@ -19,6 +28,10 @@ export const EMPTY_RECIPE_FORM_VALUES: RecipeFormValues = {
   servings: '',
   rows: [],
   recipeText: '',
+  equipment: [],
+  handsOnTime: '',
+  prepTime: '',
+  cookTime: '',
 }
 
 export function buildRecipeDocument(
@@ -29,6 +42,10 @@ export function buildRecipeDocument(
     servings: values.servings,
     foods: buildFoodsMap(values.rows),
     recipeText: values.recipeText,
+    equipment: values.equipment,
+    handsOnTime: values.handsOnTime,
+    prepTime: values.prepTime,
+    cookTime: values.cookTime,
   }
 }
 
@@ -80,9 +97,13 @@ export function computeRecipeNutritionPerServe(
     const food = currentFood
       ? scaleFoodDocument(
           currentFood,
-          quantityRatio(
-            currentFood.quantity.amount,
-            currentFood.quantity.unit,
+          foodQuantityRatio(
+            currentFood,
+            listedFood.quantity.amount,
+            listedFood.quantity.unit,
+          ),
+          foodPriceRatio(
+            currentFood,
             listedFood.quantity.amount,
             listedFood.quantity.unit,
           ),
@@ -137,5 +158,9 @@ export function recipeDocumentToFormValues(
     servings: record.servings,
     rows: foodsMapToRows(record.foods),
     recipeText: record.recipeText ?? '',
+    equipment: record.equipment ?? [],
+    handsOnTime: record.handsOnTime ?? '',
+    prepTime: record.prepTime ?? '',
+    cookTime: record.cookTime ?? '',
   }
 }

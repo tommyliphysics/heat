@@ -1,0 +1,246 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- Existing rules, unchanged ----
+    // Firestore evaluates every match block that applies to a given path and
+    // ORs the results together — a rule added below for a more specific path
+    // (e.g. /users/{uid}/foods/{foodId}) doesn't override this one, it only
+    // ever grants MORE access on top of it, never less. So owner-only
+    // read/write on everything under a user (inventory, meals, doses,
+    // settings, etc.) stays exactly as it is today with no further changes.
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /public/publicNutritionData/foods/{foodId} {
+      allow read: if request.auth != null;
+    }
+
+    // ---- Connect Profiles ----
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Whether the signed-in user is a member of `groupId` — existence of
+    // their own member doc IS membership, no other field is checked (see
+    // `GroupMemberDocument`'s doc comment in types/groups.ts).
+    function isMemberOfGroup(groupId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+    }
+
+    // One doc per connection, keyed by the OTHER party's uid — mirrors
+    // `groups/{groupId}/members`: existence is the relationship. Written
+    // symmetrically: connecting Alice and Bob creates both
+    // users/Alice/connections/Bob and users/Bob/connections/Alice, both by
+    // whichever side calls `acceptConnectionRequest` (see lib/connect.ts).
+    // Writing your OWN side is already covered by the owner-only rule
+    // above; this block only adds what the OTHER party (peerUid) needs:
+    //  - read: see a connection either party is named in;
+    //  - create: accept a request that's genuinely still open — proven by
+    //    the request doc's existence, not by a code (a permanent code has
+    //    no expiry of its own to check; the request is the actual proof
+    //    the requester asked to connect). Evaluated against state as it
+    //    stood before this write's batch, same as the old code-based check
+    //    used to be, so this still works even though the very same batch
+    //    also deletes that request doc (see `acceptConnectionRequest`);
+    //  - delete: unlink at any time, no proof needed once connected.
+    match /users/{uid}/connections/{peerUid} {
+      allow read: if isSignedIn() && request.auth.uid == peerUid;
+      allow create: if isSignedIn() && request.auth.uid == peerUid &&
+        exists(/databases/$(database)/documents/users/$(peerUid)/connectionRequests/$(uid));
+      allow delete: if isSignedIn() && request.auth.uid == peerUid;
+    }
+
+    // A still-open ask to connect, made by `requesterUid` against `uid`'s
+    // permanent code — see `ConnectionRequestDocument`'s doc comment.
+    // Owner read/write on their own incoming requests is already covered by
+    // the owner-only rule above; this block only adds what the REQUESTER
+    // needs:
+    //  - create: submit a request against a code that genuinely belongs to
+    //    `uid` — checked via the code doc itself, not merely asserted by
+    //    the client;
+    //  - read: check their own outgoing request (still pending, or gone
+    //    because it was accepted, rejected, or cancelled);
+    //  - delete: cancel their own outgoing request.
+    match /users/{uid}/connectionRequests/{requesterUid} {
+      allow create: if isSignedIn() && request.auth.uid == requesterUid &&
+        get(/databases/$(database)/documents/connectCodes/$(request.resource.data.code)).data.uid == uid;
+      allow read: if isSignedIn() && request.auth.uid == requesterUid;
+      allow delete: if isSignedIn() && request.auth.uid == requesterUid;
+    }
+
+    // A user's own permanent connect code — top-level (not nested under
+    // `users/{uid}`) so a scanning device can look it up before it has any
+    // relationship to the account at all. One at a time per account;
+    // `UserSettings.connectCode` points at whichever is current (see
+    // `ConnectCodeDocument`'s doc comment) — regenerating deletes this doc
+    // and creates a new one under a fresh random id, which is the only way
+    // to invalidate a code that's been shared somewhere it shouldn't have
+    // been, since a code otherwise never expires or gets consumed by use.
+    match /connectCodes/{code} {
+      // Lookup-able by anyone holding the code string...
+      allow get: if isSignedIn();
+      // ...but never enumerable/guessable by listing the collection.
+      allow list: if false;
+      // Only mint a code naming yourself as the issuer.
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.uid;
+      // Only its own owner can delete it — unlike the old one-shot codes
+      // (genuinely low-value, single-use tokens where this was safe to
+      // leave open), a permanent code is a standing part of an account's
+      // identity; letting any signed-in user delete any code by id would
+      // let someone grief another account by guessing/learning their code
+      // and revoking it out from under them.
+      allow delete: if isSignedIn() && request.auth.uid == resource.data.uid;
+    }
+
+    // A small, separately-readable mirror of this account's username (see
+    // `PublicProfileDocument`'s doc comment) — same openness as
+    // `connectCodes`'s `get` rule above, since a username is already
+    // effectively shared with anyone holding this account's connect code.
+    // Write stays covered entirely by the owner-only blanket rule; this
+    // only ever adds read access for everyone else.
+    match /users/{uid}/profile/{docId} {
+      allow read: if isSignedIn();
+    }
+
+    // ---- Groups ----
+    // A named set of connections that foods, recipes, and a shared
+    // inventory can be pointed at all at once (see types/groups.ts).
+    match /groups/{groupId} {
+      allow read: if isMemberOfGroup(groupId);
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.createdBy;
+      allow update: if isMemberOfGroup(groupId); // e.g. rename
+      allow delete: if isSignedIn() && request.auth.uid == resource.data.createdBy;
+
+      match /members/{memberUid} {
+        allow read: if isMemberOfGroup(groupId);
+        allow create: if isSignedIn() && (
+          // Bootstrap: the creator adding themself as the very first
+          // member — nobody is a member yet, so `isMemberOfGroup` alone
+          // could never succeed for this first write.
+          (request.auth.uid == memberUid &&
+           request.auth.uid == get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy)
+          // Or: an existing member adding one of THEIR OWN connections —
+          // immediate, no acceptance step from the person being added
+          // (see AddFoodPage-era decision log / conversation history).
+          || (isMemberOfGroup(groupId) &&
+              exists(/databases/$(database)/documents/users/$(request.auth.uid)/connections/$(memberUid)))
+        );
+        // The second branch isn't a standalone "kick" — the app's UI never
+        // offers removing anyone but yourself (see GroupDetailPage.tsx). It
+        // exists solely so `deleteGroup()` can cascade-delete every OTHER
+        // member's doc when the creator deletes the whole group; Firestore
+        // rules have no way to tell "deleting this member as part of
+        // deleting the whole group" apart from "kicking this one member
+        // while the group continues" — both are just a delete request
+        // against this same path, evaluated independently of whatever else
+        // is in the same batch. Narrowing this branch further isn't
+        // possible without moving group deletion off client-only writes
+        // entirely (e.g. a Cloud Function), which this app doesn't use.
+        allow delete: if isSignedIn() && (
+          request.auth.uid == memberUid ||
+          request.auth.uid == get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy
+        );
+      }
+
+      // Shared inventory: fully bidirectional for every member — this is
+      // the one place in the whole schema where someone other than the
+      // owning account can write, because there IS no single owning
+      // account; the group itself owns it.
+      match /inventory/{batchId} {
+        allow read, write: if isMemberOfGroup(groupId);
+      }
+
+      // The group's agreed-upon nutrition/price per shared food (keyed by
+      // normalizedFoodKey) — same "group itself owns it" reasoning as
+      // inventory above. Only ever written directly by `establishSharedItem`
+      // (first add) or by any member applying a fully-approved pendingEdit
+      // (see lib/pendingEdits.ts) — both client-enforced, not narrowed
+      // further here.
+      match /sharedItems/{itemKey} {
+        allow read, write: if isMemberOfGroup(groupId);
+      }
+
+      // Proposed nutrition/price changes awaiting unanimous approval.
+      // Membership alone gates access; who may propose vs. approve vs.
+      // apply the canonical result is enforced client-side (see
+      // lib/pendingEdits.ts's propose/respond/processPendingEdit split),
+      // consistent with how `inventory` above is likewise shape-enforced
+      // client-side rather than per-field in rules.
+      match /pendingEdits/{editId} {
+        allow read, write: if isMemberOfGroup(groupId);
+      }
+
+      // Per-purchase charges a proposer raises against other members.
+      // Anyone in the group can read; only the named proposer can create
+      // one (so a charge can't be forged as coming from someone else);
+      // updates aren't narrowed to "only your own charges.{uid} key" here,
+      // same permissive-but-membership-gated posture as `inventory`/
+      // `members` above — the client only ever touches its own key.
+      match /charges/{chargeId} {
+        allow read: if isMemberOfGroup(groupId);
+        allow create: if isMemberOfGroup(groupId) &&
+          request.auth.uid == request.resource.data.proposerUid;
+        allow update: if isMemberOfGroup(groupId);
+      }
+
+      // Singleton proposal to turn on this group's shared inventory (see
+      // `SharedInventoryProposalDocument`) — membership alone gates access,
+      // same posture as `sharedItems`/`pendingEdits`/`charges` above; who
+      // may propose vs. approve vs. apply the result is enforced
+      // client-side (see `lib/sharedInventoryProposal.ts`). Turning on the
+      // flag itself is just a `groups/{groupId}` update, already covered by
+      // that doc's own rule above — no separate rule needed for it.
+      match /sharedInventoryProposal/{proposalId} {
+        allow read, write: if isMemberOfGroup(groupId);
+      }
+    }
+
+    // Supports "which groups am I in" (`useGroups`) and "am I a member"
+    // checks that need to run as a collection-group query rather than a
+    // direct path read — collection-group queries are authorized by a
+    // separate rule from the nested one above, even though the nested one
+    // already covers direct reads/writes at that same path.
+    //
+    // Checks `resource.data.uid`, not the `{memberUid}` path wildcard, even
+    // though `GroupMemberDocument` always sets them equal (the doc id IS the
+    // uid) — a `list`/collection-group query has to be proven safe from its
+    // own filter *before* Firestore runs it, using `resource.data`, and a
+    // path segment isn't something `where('uid', '==', ...)` can be checked
+    // against ahead of time. A path-wildcard condition here works for a
+    // plain `get()` (the path is already known) but silently fails every
+    // `list` against it with permission-denied — which is exactly the
+    // denormalized `uid` field on `GroupMemberDocument` was for in the first
+    // place; this just needed to actually use it.
+    match /{path=**}/members/{memberUid} {
+      allow read: if isSignedIn() && request.auth.uid == resource.data.uid;
+    }
+
+    // ---- Food/recipe sharing ----
+    // Grants read access to the members of whichever single group a food
+    // or recipe is shared with (`sharedWith`, a group id — see
+    // FoodDocument's doc comment for why it's one group, not several) —
+    // owner read/write is already covered by the blanket rule above, this
+    // only ever expands on it. Declared via the collection-group wildcard
+    // (which also covers direct single-document reads at the nested path,
+    // making a separate `/users/{uid}/foods/{foodId}` block unnecessary)
+    // since `list` queries against a connection's shared items go through
+    // a collection-group query for the same reason `members` does above.
+    // Any such `list` query needs a matching `where('sharedWith', '==', ...)`
+    // filter client-side — Firestore can't verify a resource.data-dependent
+    // rule against a query that doesn't already constrain on that field.
+    match /{path=**}/foods/{foodId} {
+      allow read: if isSignedIn() &&
+        resource.data.sharedWith != null && isMemberOfGroup(resource.data.sharedWith);
+    }
+
+    match /{path=**}/recipes/{recipeId} {
+      allow read: if isSignedIn() &&
+        resource.data.sharedWith != null && isMemberOfGroup(resource.data.sharedWith);
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Modal from './Modal.tsx'
 
 type ConfirmDeleteModalProps = {
@@ -7,6 +7,10 @@ type ConfirmDeleteModalProps = {
   onConfirm: () => Promise<void>
   title: string
   message: string
+  /** Overrides the confirm button's resting/in-flight labels — for a non-delete destructive action (e.g. disconnecting) reusing this same confirm-then-act shape. Defaults to "Delete"/"Deleting..." for every existing (genuinely delete) usage. */
+  confirmLabel?: string
+  confirmingLabel?: string
+  errorMessage?: string
 }
 
 function ConfirmDeleteModal({
@@ -15,9 +19,27 @@ function ConfirmDeleteModal({
   onConfirm,
   title,
   message,
+  confirmLabel = 'Delete',
+  confirmingLabel = 'Deleting...',
+  errorMessage = 'Could not delete. Please try again.',
 }: ConfirmDeleteModalProps) {
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
+
+  // Every existing usage happens to navigate away (or gets `key`-remounted)
+  // on a successful confirm, which incidentally resets this component's
+  // state — but this instance never unmounts on its own success path (it
+  // just goes `open={false}` while the page underneath stays permanently
+  // mounted, per PageRegistry.tsx), so without this it would stay stuck
+  // showing `confirmingLabel` the next time it's reopened for a *different*
+  // target. Resetting on every open, rather than relying on the caller's
+  // navigation habits, makes this safe for a caller that doesn't navigate.
+  useEffect(() => {
+    if (open) {
+      setDeleting(false)
+      setError('')
+    }
+  }, [open])
 
   async function handleConfirm() {
     setError('')
@@ -25,7 +47,7 @@ function ConfirmDeleteModal({
     try {
       await onConfirm()
     } catch {
-      setError('Could not delete. Please try again.')
+      setError(errorMessage)
       setDeleting(false)
     }
   }
@@ -62,7 +84,7 @@ function ConfirmDeleteModal({
           onClick={handleConfirm}
           disabled={deleting}
         >
-          {deleting ? 'Deleting...' : 'Delete'}
+          {deleting ? confirmingLabel : confirmLabel}
         </button>
       </div>
     </Modal>

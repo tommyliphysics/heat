@@ -1,10 +1,18 @@
 import { Link } from 'react-router-dom'
+import BrandMark from '../components/BrandMark.tsx'
+import PageLayout from '../components/PageLayout.tsx'
 import './pages.css'
 
 function LandingPage() {
   return (
-    <section className="page page-center">
-      <h1>LiftShopCook</h1>
+    <PageLayout
+      header={
+        <h1 className="landing-brand">
+          <BrandMark size={30} />
+          Heat
+        </h1>
+      }
+    >
       <div className="actions">
         <Link to="/login" className="btn btn-primary">
           Log In
@@ -13,7 +21,7 @@ function LandingPage() {
           Create Account
         </Link>
       </div>
-    </section>
+    </PageLayout>
   )
 }
 

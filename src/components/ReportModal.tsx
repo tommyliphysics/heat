@@ -1,11 +1,12 @@
 import { useState } from 'react'
+import EnergyToggle from './EnergyToggle.tsx'
 import Modal from './Modal.tsx'
 import ShoppingListModal from './ShoppingListModal.tsx'
 import NutritionReportModal from './NutritionReportModal.tsx'
 import CurrencyMismatchModal from './CurrencyMismatchModal.tsx'
 import Icon from './Icon.tsx'
 import { getCurrencySymbol } from '../data/currencies.ts'
-import { bestEnergyTotal } from '../lib/units.ts'
+import { bestEnergyTotal, convertEnergy, otherEnergyUnit } from '../lib/units.ts'
 import {
   autoResolveShoppingList,
   findBestAutoTarget,
@@ -13,7 +14,7 @@ import {
   type ExchangeRateRecord,
 } from '../lib/currencyResolution.ts'
 import type { ReportData, ShoppingListEntry } from '../lib/report.ts'
-import type { MealListItem } from '../types/food.ts'
+import type { EnergyUnit, MealListItem } from '../types/food.ts'
 
 type ReportModalProps = {
   open: boolean
@@ -39,10 +40,15 @@ function ReportModal({
   const [mismatchOpen, setMismatchOpen] = useState(false)
   const [shoppingEntries, setShoppingEntries] = useState<ShoppingListEntry[]>([])
   const [mismatchEntries, setMismatchEntries] = useState<ShoppingListEntry[]>([])
+  const [energyDisplayUnit, setEnergyDisplayUnit] = useState<EnergyUnit | null>(
+    null,
+  )
 
   if (!report) return null
 
   const energy = bestEnergyTotal(report.avgCaloriesPerDay, report.energyUnitsInUse)
+  const displayUnit = energyDisplayUnit ?? energy.unit
+  const displayAmount = convertEnergy(energy.amount, energy.unit, displayUnit)
 
   function openShoppingList() {
     const list = report!.shoppingList
@@ -78,9 +84,12 @@ function ReportModal({
       <div className="report-stats">
         <div className="report-stat">
           <span className="report-stat-label">Avg. Calories / Day</span>
-          <span className="report-stat-value">
-            {Math.round(energy.amount)} {energy.unit}
-          </span>
+          <EnergyToggle
+            className="report-stat-value"
+            amount={displayAmount}
+            unit={displayUnit}
+            onToggle={() => setEnergyDisplayUnit(otherEnergyUnit(displayUnit))}
+          />
         </div>
         <div className="report-stat">
           <span className="report-stat-label">Avg. Cost / Day</span>

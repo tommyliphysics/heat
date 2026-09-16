@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import Icon from './Icon.tsx'
 import type { FoodListItem, RecipeListItem } from '../hooks/useFoodRows.ts'
+import { foodDisplayName } from '../lib/food.ts'
+import { matchesQuery } from '../lib/search.ts'
 
 type FoodAutocompleteProps = {
   foods: FoodListItem[]
@@ -9,6 +11,8 @@ type FoodAutocompleteProps = {
   onSelectFood: (foodId: string) => void
   onSelectRecipe: (recipeId: string) => void
   onCreateNew: (query: string) => void
+  /** Hides the "+ New Food" affordance on no results, showing a plain empty message instead — for contexts (e.g. reviewing a scanned receipt) where creating a food would navigate away and lose in-progress state; the caller offers its own way to handle an unmatched item instead. */
+  allowCreate?: boolean
 }
 
 function FoodAutocomplete({
@@ -18,6 +22,7 @@ function FoodAutocomplete({
   onSelectFood,
   onSelectRecipe,
   onCreateNew,
+  allowCreate = true,
 }: FoodAutocompleteProps) {
   const [query, setQuery] = useState(selectedName)
   const [open, setOpen] = useState(false)
@@ -26,12 +31,12 @@ function FoodAutocomplete({
     setQuery(selectedName)
   }, [selectedName])
 
-  const trimmed = query.trim().toLowerCase()
+  const trimmed = query.trim()
   const foodResults = trimmed
-    ? foods.filter((food) => food.name.toLowerCase().includes(trimmed))
+    ? foods.filter((food) => matchesQuery(food.name, trimmed))
     : []
   const recipeResults = trimmed
-    ? recipes.filter((recipe) => recipe.name.toLowerCase().includes(trimmed))
+    ? recipes.filter((recipe) => matchesQuery(recipe.name, trimmed))
     : []
 
   function handleSelectFood(food: FoodListItem) {
@@ -78,7 +83,7 @@ function FoodAutocomplete({
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleSelectFood(food)}
                   >
-                    {food.name}
+                    {foodDisplayName(food)}
                   </button>
                 </li>
               ))}
@@ -96,7 +101,7 @@ function FoodAutocomplete({
                 </li>
               ))}
             </ul>
-          ) : (
+          ) : allowCreate ? (
             <ul className="food-search-results">
               <li>
                 <button
@@ -110,6 +115,8 @@ function FoodAutocomplete({
                 </button>
               </li>
             </ul>
+          ) : (
+            <p className="food-search-empty">No matching foods.</p>
           )}
         </div>
       )}

@@ -3,7 +3,10 @@ import { Link, useNavigate } from 'react-router-dom'
 import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth'
 import { auth } from '../firebase.ts'
 import GoogleButton from '../components/GoogleButton.tsx'
+import PageLayout from '../components/PageLayout.tsx'
 import { signInWithGoogle } from '../lib/googleSignIn.ts'
+import { takePendingPath } from '../lib/pendingPath.ts'
+import { ensureDefaultSettings } from '../lib/settings.ts'
 import './pages.css'
 
 function CreateAccountPage() {
@@ -30,6 +33,8 @@ function CreateAccountPage() {
         email,
         password,
       )
+      // Best-effort — never block signup on IP geolocation being slow/down.
+      ensureDefaultSettings(credential.user.uid).catch(() => {})
       await sendEmailVerification(credential.user)
       navigate('/verify-email')
     } catch {
@@ -43,16 +48,24 @@ function CreateAccountPage() {
     setError('')
     const success = await signInWithGoogle()
     if (success) {
-      navigate('/dashboard')
+      if (auth.currentUser) {
+        ensureDefaultSettings(auth.currentUser.uid).catch(() => {})
+      }
+      navigate(takePendingPath())
     } else {
       setError('Google sign-in failed. Please try again.')
     }
   }
 
   return (
-    <section className="page page-center">
-      <h1>Create Account</h1>
-
+    <PageLayout
+      header={<h1>Create Account</h1>}
+      footer={
+        <Link to="/" className="back-link">
+          &larr; Back
+        </Link>
+      }
+    >
       <GoogleButton label="Sign up with Google" onClick={handleGoogleSignIn} />
 
       <div className="divider">or</div>
@@ -94,10 +107,7 @@ function CreateAccountPage() {
           {saving ? 'Creating...' : 'Create Account'}
         </button>
       </form>
-      <Link to="/" className="back-link">
-        &larr; Back
-      </Link>
-    </section>
+    </PageLayout>
   )
 }
 

@@ -4,7 +4,6 @@ import type { EnergyUnit, MealDocument } from '../types/food.ts'
 export type ShoppingListEntry = {
   foodId: string
   name: string
-  brand: string
   totalGrams: number
   totalMilliliters: number
   totalCount: number
@@ -29,6 +28,16 @@ export type ReportData = {
   avgFat: number
   avgProtein: number
   micronutrients: MicronutrientAverage[]
+  totalHandsOnMinutes: number
+}
+
+/** Total hands-on time (minutes) across a meal's recipe entries — standalone foods have none. */
+export function mealHandsOnMinutes(meal: MealDocument): number {
+  let total = 0
+  for (const entry of meal.entries ?? []) {
+    if (entry.kind === 'recipe') total += Number(entry.handsOnTime) || 0
+  }
+  return total
 }
 
 export function computeReport(meals: MealDocument[], days: number): ReportData {
@@ -37,6 +46,7 @@ export function computeReport(meals: MealDocument[], days: number): ReportData {
   let totalCarbs = 0
   let totalFat = 0
   let totalProtein = 0
+  let totalHandsOnMinutes = 0
   const currencies = new Set<string>()
   const energyUnits = new Set<EnergyUnit>()
   const caloriesByEnergyUnit = new Map<EnergyUnit, number>()
@@ -45,7 +55,6 @@ export function computeReport(meals: MealDocument[], days: number): ReportData {
     string,
     {
       name: string
-      brand: string
       totalGrams: number
       totalMilliliters: number
       totalCount: number
@@ -55,6 +64,8 @@ export function computeReport(meals: MealDocument[], days: number): ReportData {
   >()
 
   for (const meal of meals) {
+    totalHandsOnMinutes += mealHandsOnMinutes(meal)
+
     for (const [foodId, food] of Object.entries(meal.foods ?? {})) {
       const calories = toCalories(food.energy.amount, food.energy.unit)
       totalCalories += calories
@@ -98,7 +109,6 @@ export function computeReport(meals: MealDocument[], days: number): ReportData {
       } else {
         shoppingMap.set(foodId, {
           name: food.name,
-          brand: food.price.brand,
           totalGrams: grams,
           totalMilliliters: milliliters,
           totalCount: count,
@@ -138,5 +148,6 @@ export function computeReport(meals: MealDocument[], days: number): ReportData {
       name,
       amountMg: totalMg / safeDays,
     })),
+    totalHandsOnMinutes,
   }
 }

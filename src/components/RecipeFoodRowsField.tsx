@@ -2,6 +2,11 @@ import { useState } from 'react'
 import FoodSearchModal from './FoodSearchModal.tsx'
 import type { FoodListItem } from '../hooks/useFoodRows.ts'
 import type { FoodRow } from '../lib/foodRow.ts'
+import {
+  compatibleQuantityUnits,
+  foodServingLabel,
+  formatUnitLabel,
+} from '../lib/units.ts'
 import type { QuantityUnit } from '../types/food.ts'
 
 type RecipeFoodRowsFieldProps = {
@@ -44,14 +49,15 @@ function RecipeFoodRowsField({
               onUnitChange(row.id, e.target.value as QuantityUnit)
             }
           >
-            <option value="g">g</option>
-            <option value="kg">kg</option>
-            <option value="lb">lb</option>
-            <option value="oz">oz</option>
-            <option value="mL">mL</option>
-            <option value="qt">qt</option>
-            <option value="fl oz">fl oz</option>
-            <option value="">ea</option>
+            {(row.foodSnapshot ? compatibleQuantityUnits(row.foodSnapshot) : []).map(
+              (u) => (
+                <option key={u} value={u}>
+                  {u === 'serving' && row.foodSnapshot
+                    ? foodServingLabel(row.foodSnapshot.servingSize)
+                    : formatUnitLabel(u)}
+                </option>
+              ),
+            )}
           </select>
           <button
             type="button"

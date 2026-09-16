@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { sendEmailVerification, signOut } from 'firebase/auth'
 import { auth } from '../firebase.ts'
+import PageLayout from '../components/PageLayout.tsx'
+import { takePendingPath } from '../lib/pendingPath.ts'
 import './pages.css'
 
 function VerifyEmailPage() {
@@ -23,7 +25,7 @@ function VerifyEmailPage() {
     try {
       await user!.reload()
       if (auth.currentUser?.emailVerified) {
-        navigate('/dashboard')
+        navigate(takePendingPath())
       } else {
         setError(
           "Still not verified. Click the link in the email, then try again.",
@@ -53,8 +55,14 @@ function VerifyEmailPage() {
   }
 
   return (
-    <section className="page page-center">
-      <h1>Verify Your Email</h1>
+    <PageLayout
+      header={<h1>Verify Your Email</h1>}
+      footer={
+        <button type="button" className="back-link" onClick={handleLogout}>
+          Log out
+        </button>
+      }
+    >
       <p>
         We sent a verification link to <strong>{user.email}</strong>. Click
         the link, then continue below.
@@ -80,11 +88,7 @@ function VerifyEmailPage() {
           Resend email
         </button>
       </div>
-
-      <button type="button" className="back-link" onClick={handleLogout}>
-        Log out
-      </button>
-    </section>
+    </PageLayout>
   )
 }
 

@@ -1,9 +1,18 @@
 import Modal from './Modal.tsx'
-import type { EnergyUnit, Micronutrient, MicronutrientUnit } from '../types/food.ts'
+import type {
+  EnergyUnit,
+  Micronutrient,
+  MicronutrientUnit,
+  QuantityUnit,
+} from '../types/food.ts'
 
 type NutritionModalProps = {
   open: boolean
   onClose: () => void
+  quantity: string
+  onQuantityChange: (value: string) => void
+  quantityUnit: QuantityUnit
+  onQuantityUnitChange: (unit: QuantityUnit) => void
   energy: string
   onEnergyChange: (value: string) => void
   energyUnit: EnergyUnit
@@ -28,6 +37,10 @@ type NutritionModalProps = {
 function NutritionModal({
   open,
   onClose,
+  quantity,
+  onQuantityChange,
+  quantityUnit,
+  onQuantityUnitChange,
   energy,
   onEnergyChange,
   energyUnit,
@@ -51,6 +64,32 @@ function NutritionModal({
       titleId="nutrition-title"
       title="Nutrition"
     >
+      <label htmlFor="quantity">Quantity</label>
+      <div className="unit-row">
+        <input
+          id="quantity"
+          type="number"
+          value={quantity}
+          onChange={(e) => onQuantityChange(e.target.value)}
+          required
+        />
+        <select
+          aria-label="Quantity unit"
+          value={quantityUnit}
+          onChange={(e) => onQuantityUnitChange(e.target.value as QuantityUnit)}
+        >
+          <option value="g">g</option>
+          <option value="kg">kg</option>
+          <option value="oz">oz</option>
+          <option value="lb">lb</option>
+          <option value="mL">mL</option>
+          <option value="L">L</option>
+          <option value="fl oz">fl. oz</option>
+          <option value="qt">qt</option>
+          <option value="">ea</option>
+        </select>
+      </div>
+
       <label htmlFor="energy">Energy</label>
       <div className="unit-row">
         <input

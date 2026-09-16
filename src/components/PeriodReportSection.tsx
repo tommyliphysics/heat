@@ -1,18 +1,20 @@
 import { useState } from 'react'
 import CurrencyMismatchModal from './CurrencyMismatchModal.tsx'
+import EnergyToggle from './EnergyToggle.tsx'
 import ShoppingListTable from './ShoppingListTable.tsx'
 import NutritionStats from './NutritionStats.tsx'
 import Icon from './Icon.tsx'
 import { getCurrencySymbol } from '../data/currencies.ts'
 import { computeReport, type ShoppingListEntry } from '../lib/report.ts'
-import { fromCalories } from '../lib/units.ts'
+import { formatMinutes } from '../lib/time.ts'
+import { fromCalories, otherEnergyUnit } from '../lib/units.ts'
 import {
   autoResolveShoppingList,
   findBestAutoTarget,
   hasCurrencyMismatch,
   type ExchangeRateRecord,
 } from '../lib/currencyResolution.ts'
-import type { MealListItem } from '../types/food.ts'
+import type { EnergyUnit, MealListItem } from '../types/food.ts'
 
 type PeriodReportSectionProps = {
   variant: 'day' | 'week'
@@ -40,14 +42,15 @@ function PeriodReportSection({
   const [shoppingOpen, setShoppingOpen] = useState(false)
   const [nutritionOpen, setNutritionOpen] = useState(false)
   const [mismatchOpen, setMismatchOpen] = useState(false)
+  const [energyDisplayUnit, setEnergyDisplayUnit] = useState<EnergyUnit | null>(
+    null,
+  )
 
   const mismatched = hasCurrencyMismatch(entries)
   const totalSpend = entries.reduce((sum, entry) => sum + entry.totalPrice, 0)
   const spendCurrency = entries[0]?.currency ?? ''
-  const energy = {
-    amount: fromCalories(report.avgCaloriesPerDay, report.dominantEnergyUnit),
-    unit: report.dominantEnergyUnit,
-  }
+  const energyUnit = energyDisplayUnit ?? report.dominantEnergyUnit
+  const energyAmount = fromCalories(report.avgCaloriesPerDay, energyUnit)
 
   function handleResolved(resolved: ShoppingListEntry[]) {
     setEntries(resolved)
@@ -86,10 +89,22 @@ function PeriodReportSection({
           ))}
         <div className="report-stat">
           <span className="report-stat-label">
-            {variant === 'week' ? `Avg. ${energy.unit}/Day` : 'Energy'}
+            {variant === 'week' ? `Avg. ${energyUnit}/Day` : 'Energy'}
+          </span>
+          <EnergyToggle
+            className="report-stat-value"
+            amount={energyAmount}
+            unit={energyUnit}
+            onToggle={() => setEnergyDisplayUnit(otherEnergyUnit(energyUnit))}
+          />
+        </div>
+        <div className="report-stat">
+          <span className="report-stat-label hands-on-label">
+            <Icon name="clock" size={13} />
+            Total Hands-on
           </span>
           <span className="report-stat-value">
-            {Math.round(energy.amount)} {energy.unit}
+            {formatMinutes(report.totalHandsOnMinutes)}
           </span>
         </div>
       </div>
@@ -116,7 +131,14 @@ function PeriodReportSection({
         <Icon name="leaf" size={16} />
         Nutrition
       </button>
-      {nutritionOpen && <NutritionStats report={report} />}
+      {nutritionOpen && (
+        <>
+          {variant === 'week' && (
+            <p className="nutrition-caption">Daily Average</p>
+          )}
+          <NutritionStats report={report} />
+        </>
+      )}
 
       {mismatched && (
         <button
